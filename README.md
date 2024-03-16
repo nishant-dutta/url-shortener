@@ -151,3 +151,71 @@ Let’s look at the code for redirecting a post request to another post request:
         request.setAttribute(View.RESPONSE_STATUS_ATTRIBUTE, HttpStatus.TEMPORARY_REDIRECT);
         return new ModelAndView("redirect:/redirectedPostToPost");
     }
+
+# Understanding the project
+
+From the different ways of redirecting requests, using the **"redirect:"** attribute seems to be the best
+suited for our use-case.
+
+### Considerations
+
+* We won’t be supporting any path variables or query parameters in our short URL as it defeats the purpose of having easy to remember cleaner & shorter URLs for our clients.
+* We will also be supporting all the HTTP methods like POST, PUT, etc which has a payload
+
+### Creating Indexes
+
+Indexes are automatically created for Primary key & columns with **UNIQUE** constraint, so **shortUrl** already has an index created but we can create indexes in the following manner in JPA:
+
+    @Entity
+    @Table(name = "shortened_url", indexes = {
+    @Index(columnList = "createdOn", name = "idx_created_on"),
+    @Index(columnList = "shortUrl,originalUrl", name = "idx_short_url_original_url")}
+    })
+    public class ShortenedUrl {}
+
+#### NOTE
+If we have not overridden the name in **@Column** we can specify either the variable name **shortUrl**(in Pascal case) or the final created column name inside the **Table** i.e. short_url
+We should specify the column name if we have overridden it inside the @Column. 
+
+For example:
+If we have used @Column(name = "orig_url"), we have to mandatorily use the column name as “orig_url” when creating the list.
+Indexes which are automatically created(like primary_key column & Unique constraint column) pick the value implicitly even if it is renamed
+
+### Creating a Proxy for automatic query generation
+
+Let’s create a proxy Interface **extending** the **JpaRepository** now which is implemented by JPA and facilitates with major **CRUD** operations of our Table.
+
+Note that we have additionally added a findByShortUrl method declaration in this which automatically generates the select statement queries with “where short_url = ?” condition which was a custom requirement for our project
+Here,
+* **findBy**: reserved prefix for all findBy method declarations
+* **ShortUrl**: column name which we want to query in the where clause
+* **findByShortUrlAndOriginalUrl**: If we declare this method, we have to specify two arguments i.e. shortUrl & originalUrl so that the corresponding implementation can be “where shortUrl=? and originalUrl=?”
+* We can also use operations like “**Or**”, etc for other conditions instead of “And”. Refer to docs for more operators!
+* The methods can return only one data where “**ShortenedUrl**” is appropriate or a list of data where **“List\<ShortenedUrl\>”** should be the return type.
+
+### Loading Dummy data on application startup
+Since we are using an In-Memory Database i.e. H2, we have to Load some dummy data which can be used for liveness probes. We should consider removing this in case of a real Database
+
+    package com.cloud.application.UrlShortener.repository;
+    
+    import org.slf4j.Logger;
+    import org.slf4j.LoggerFactory;
+    import org.springframework.boot.CommandLineRunner;
+    import org.springframework.context.annotation.Bean;
+    import org.springframework.context.annotation.Configuration;
+    
+    // Loads some dummy data which can be used for liveness probes
+    // todo: when working with a real database, configure it to push values only if it isn't present
+    @Configuration
+    public class LoadDatabase {
+      private static final Logger log = LoggerFactory.getLogger(LoadDatabase.class);
+      
+      @Bean
+      CommandLineRunner initDatabase(ShortenedUrlProxy repository){
+        return args -> {
+          log.info("Preloading " + repository.save(new ShortenedUrl("http://abc.com","a", 1)));
+          log.info("Preloading " + repository.save(new ShortenedUrl("http://pqr.com","p", 1)));
+        };
+      }
+    }
+
